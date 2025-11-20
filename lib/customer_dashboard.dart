@@ -98,7 +98,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                 size: 80, color: Color.fromARGB(255, 21, 101, 192)),
             const SizedBox(height: 20),
             const Text(
-              "Welcome to NearShop!",
+              "Welcome to NearBuy",
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 10),

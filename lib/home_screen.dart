@@ -10,7 +10,7 @@ class HomeScreen extends StatelessWidget {
       ),
       body: Center(
         child: Text(
-          'Welcome to NearShop!',
+          'Welcome to NearBuy',
           style: TextStyle(fontSize: 24),
         ),
       ),
