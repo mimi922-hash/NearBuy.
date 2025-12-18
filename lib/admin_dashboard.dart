@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'role_selection_screen.dart';
+import 'shop_detail_page.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -9,8 +11,16 @@ class AdminDashboard extends StatefulWidget {
   State<AdminDashboard> createState() => _AdminDashboardState();
 }
 
-class _AdminDashboardState extends State<AdminDashboard> {
+class _AdminDashboardState extends State<AdminDashboard>
+    with SingleTickerProviderStateMixin {
   final user = FirebaseAuth.instance.currentUser;
+  late TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+  }
 
   void _logout() async {
     await FirebaseAuth.instance.signOut();
@@ -23,14 +33,103 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Stream<QuerySnapshot> _getShops(String status) {
+    return FirebaseFirestore.instance
+        .collection('shops')
+        .where('status', isEqualTo: status)
+        .snapshots();
+  }
+
+  void _updateStatus(String shopId, String newStatus) {
+    FirebaseFirestore.instance.collection('shops').doc(shopId).update({
+      'status': newStatus,
+      'notification': newStatus == 'verified'
+          ? 'Your shop has been approved'
+          : 'Your shop has been rejected'
+    });
+  }
+
+  Widget _shopList(String status) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: _getShops(status),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final shops = snapshot.data!.docs;
+
+        if (shops.isEmpty) {
+          return Center(
+            child: Text("No $status shops"),
+          );
+        }
+
+        return ListView.builder(
+          itemCount: shops.length,
+          itemBuilder: (context, index) {
+            final shop = shops[index];
+            final data = shop.data() as Map<String, dynamic>;
+
+            final shopName = data['shop_name'] ?? "Unnamed Shop";
+            final ownerName = data['owner_name'] ?? "Unknown Owner";
+
+            return Card(
+              margin: const EdgeInsets.all(10),
+              child: ListTile(
+                title: Text(shopName),
+                subtitle: Text(ownerName),
+
+                // 👉 ADMIN TAP TO SEE FULL DETAILS
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ShopDetailPage(
+                        shopId: shop.id,
+                        shopData: data,
+                        onStatusChange: (newStatus) {
+                          _updateStatus(shop.id, newStatus);
+                        },
+                      ),
+                    ),
+                  );
+                },
+
+                trailing: status == 'pending'
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.check, color: Colors.green),
+                            onPressed: () {
+                              _updateStatus(shop.id, 'verified');
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            onPressed: () {
+                              _updateStatus(shop.id, 'rejected');
+                            },
+                          ),
+                        ],
+                      )
+                    : null,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: Drawer(
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.only(
-              topRight: Radius.circular(25),
-              bottomRight: Radius.circular(25)),
+              topRight: Radius.circular(25), bottomRight: Radius.circular(25)),
         ),
         child: Column(
           children: [
@@ -59,9 +158,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
               leading: const Icon(Icons.verified_user),
               title: const Text("Approve Shops"),
               onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Approval module coming soon!")),
-                );
+                _tabController.animateTo(0);
+                Navigator.pop(context);
               },
             ),
             ListTile(
@@ -87,26 +185,22 @@ class _AdminDashboardState extends State<AdminDashboard> {
       appBar: AppBar(
         title: const Text("Admin Dashboard"),
         backgroundColor: const Color.fromARGB(255, 21, 101, 192),
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.admin_panel_settings,
-                size: 80, color: Color.fromARGB(255, 21, 101, 192)),
-            const SizedBox(height: 20),
-            const Text(
-              "Welcome Admin!",
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              "Manage shop approvals, users, and reports efficiently.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade700),
-            ),
+        bottom: TabBar(
+          controller: _tabController,
+          tabs: const [
+            Tab(text: "Pending"),
+            Tab(text: "Verified"),
+            Tab(text: "Rejected"),
           ],
         ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _shopList("pending"),
+          _shopList("verified"),
+          _shopList("rejected"),
+        ],
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'role_selection_screen.dart';
 
 class CustomerDashboard extends StatefulWidget {
@@ -11,6 +12,7 @@ class CustomerDashboard extends StatefulWidget {
 
 class _CustomerDashboardState extends State<CustomerDashboard> {
   final user = FirebaseAuth.instance.currentUser;
+  String _searchText = "";
 
   void _logout() async {
     await FirebaseAuth.instance.signOut();
@@ -21,6 +23,13 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
         (route) => false,
       );
     }
+  }
+
+  Stream<QuerySnapshot> _getVerifiedShops() {
+    return FirebaseFirestore.instance
+        .collection('shops')
+        .where('status', isEqualTo: 'verified')
+        .snapshots();
   }
 
   @override
@@ -52,9 +61,7 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
             ListTile(
               leading: const Icon(Icons.home),
               title: const Text("Home"),
-              onTap: () {
-                Navigator.pop(context);
-              },
+              onTap: () => Navigator.pop(context),
             ),
             const Divider(),
             ListTile(
@@ -90,40 +97,78 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
         title: const Text("Customer Dashboard"),
         backgroundColor: const Color.fromARGB(255, 21, 101, 192),
       ),
-      body: Center(
+      body: Padding(
+        padding: const EdgeInsets.all(12.0),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.shopping_bag_outlined,
-                size: 80, color: Color.fromARGB(255, 21, 101, 192)),
-            const SizedBox(height: 20),
-            const Text(
-              "Welcome to NearBuy",
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              "Explore nearby shops, reviews, and services easily.",
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey.shade700),
-            ),
-            const SizedBox(height: 40),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color.fromARGB(255, 21, 101, 192),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+            // Search bar
+            TextField(
+              decoration: InputDecoration(
+                hintText: "Search Shops...",
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text("Feature under development...")),
-                );
+              onChanged: (value) {
+                setState(() {
+                  _searchText = value.toLowerCase();
+                });
               },
-              icon: const Icon(Icons.explore),
-              label: const Text("Start Exploring"),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: _getVerifiedShops(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  final shops = snapshot.data!.docs.where((doc) {
+                    final data = doc.data() as Map<String, dynamic>;
+                    final shopName = data['shop_name']?.toString().toLowerCase() ?? "";
+                    final category = data['shop_category']?.toString().toLowerCase() ?? "";
+                    return shopName.contains(_searchText) || category.contains(_searchText);
+                  }).toList();
+
+                  if (shops.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        "No shops found.",
+                        style: TextStyle(fontSize: 16),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    itemCount: shops.length,
+                    itemBuilder: (context, index) {
+                      final data = shops[index].data() as Map<String, dynamic>;
+                      return Card(
+                        elevation: 3,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        margin: const EdgeInsets.symmetric(vertical: 8),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          leading: const Icon(Icons.store, size: 40, color: Color.fromARGB(255, 21, 101, 192)),
+                          title: Text(data['shop_name'] ?? "Unnamed Shop",
+                              style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(data['shop_location'] ?? "Unknown Location"),
+                          trailing: const Icon(Icons.arrow_forward_ios, size: 18),
+                          onTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Products of ${data['shop_name']} coming soon!")),
+                            );
+                          },
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),
