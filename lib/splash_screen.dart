@@ -93,7 +93,7 @@ class _SplashScreenState extends State<SplashScreen>
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Image.asset('assets/pogo.jpeg', height: 350),
+                Image.asset('assets/logo002.jpeg', height: 350),
                 const SizedBox(height: 50),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,

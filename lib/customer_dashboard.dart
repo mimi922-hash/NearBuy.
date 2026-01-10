@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:geolocator/geolocator.dart';
 import 'role_selection_screen.dart';
+import 'shop_products_screen.dart';
+import 'services/location_service.dart';
+import 'screens/map_screen.dart'; // ✅ Map screen import
 
 class CustomerDashboard extends StatefulWidget {
   const CustomerDashboard({super.key});
@@ -13,6 +17,33 @@ class CustomerDashboard extends StatefulWidget {
 class _CustomerDashboardState extends State<CustomerDashboard> {
   final user = FirebaseAuth.instance.currentUser;
   String _searchText = "";
+
+  Position? _currentPosition;
+  String _locationStatus = "Fetching location...";
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentLocation();
+  }
+
+  Future<void> _fetchCurrentLocation() async {
+    try {
+      final position = await LocationService.getCurrentLocation();
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+          _locationStatus = "Location fetched";
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _locationStatus = "Location permission denied";
+        });
+      }
+    }
+  }
 
   void _logout() async {
     await FirebaseAuth.instance.signOut();
@@ -36,71 +67,56 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
   Widget build(BuildContext context) {
     return Scaffold(
       drawer: Drawer(
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.only(
-            topRight: Radius.circular(25),
-            bottomRight: Radius.circular(25),
-          ),
-        ),
         child: Column(
           children: [
             UserAccountsDrawerHeader(
               decoration: const BoxDecoration(
                 color: Color.fromARGB(255, 21, 101, 192),
               ),
-              accountName: Text(
-                user?.displayName ?? "Customer",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              accountName: Text(user?.displayName ?? "Customer"),
               accountEmail: Text(user?.email ?? ""),
-              currentAccountPicture: const CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.person, color: Colors.blue, size: 40),
-              ),
             ),
             ListTile(
-              leading: const Icon(Icons.home),
-              title: const Text("Home"),
-              onTap: () => Navigator.pop(context),
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.person),
-              title: const Text("Profile"),
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Profile feature coming soon!")),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.store),
-              title: const Text("Nearby Shops"),
-              onTap: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Map feature coming soon!")),
-                );
-              },
-            ),
-            const Spacer(),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text("Logout", style: TextStyle(color: Colors.red)),
+              leading: const Icon(Icons.logout),
+              title: const Text("Logout"),
               onTap: _logout,
             ),
-            const SizedBox(height: 10),
           ],
         ),
       ),
+
       appBar: AppBar(
         title: const Text("Customer Dashboard"),
         backgroundColor: const Color.fromARGB(255, 21, 101, 192),
       ),
+
+      // ✅ Floating Button (SAFE)
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: const Color.fromARGB(255, 21, 101, 192),
+        tooltip: "Open Map",
+        child: const Icon(Icons.location_on),
+        onPressed: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MapScreen()),
+          );
+        },
+      ),
+
       body: Padding(
         padding: const EdgeInsets.all(12.0),
         child: Column(
           children: [
+            // Location status
+            Text(
+              _currentPosition == null
+                  ? _locationStatus
+                  : "Lat: ${_currentPosition!.latitude}, Lng: ${_currentPosition!.longitude}",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+
+            const SizedBox(height: 10),
+
             // Search bar
             TextField(
               decoration: InputDecoration(
@@ -111,12 +127,12 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
                 ),
               ),
               onChanged: (value) {
-                setState(() {
-                  _searchText = value.toLowerCase();
-                });
+                setState(() => _searchText = value.toLowerCase());
               },
             ),
-            const SizedBox(height: 12),
+
+            const SizedBox(height: 10),
+
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _getVerifiedShops(),
@@ -127,40 +143,40 @@ class _CustomerDashboardState extends State<CustomerDashboard> {
 
                   final shops = snapshot.data!.docs.where((doc) {
                     final data = doc.data() as Map<String, dynamic>;
-                    final shopName = data['shop_name']?.toString().toLowerCase() ?? "";
-                    final category = data['shop_category']?.toString().toLowerCase() ?? "";
-                    return shopName.contains(_searchText) || category.contains(_searchText);
+                    return (data['shop_name'] ?? "")
+                            .toString()
+                            .toLowerCase()
+                            .contains(_searchText) ||
+                        (data['shop_category'] ?? "")
+                            .toString()
+                            .toLowerCase()
+                            .contains(_searchText);
                   }).toList();
 
                   if (shops.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        "No shops found.",
-                        style: TextStyle(fontSize: 16),
-                      ),
-                    );
+                    return const Center(child: Text("No shops found"));
                   }
 
                   return ListView.builder(
                     itemCount: shops.length,
                     itemBuilder: (context, index) {
-                      final data = shops[index].data() as Map<String, dynamic>;
+                      final data =
+                          shops[index].data() as Map<String, dynamic>;
+
                       return Card(
-                        elevation: 3,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        margin: const EdgeInsets.symmetric(vertical: 8),
                         child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          leading: const Icon(Icons.store, size: 40, color: Color.fromARGB(255, 21, 101, 192)),
-                          title: Text(data['shop_name'] ?? "Unnamed Shop",
-                              style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(data['shop_location'] ?? "Unknown Location"),
-                          trailing: const Icon(Icons.arrow_forward_ios, size: 18),
+                          leading: const Icon(Icons.store),
+                          title: Text(data['shop_name'] ?? ""),
+                          subtitle: Text(data['shop_location'] ?? ""),
                           onTap: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text("Products of ${data['shop_name']} coming soon!")),
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ShopProductsScreen(
+                                  shopId: shops[index].id,
+                                  shopName: data['shop_name'],
+                                ),
+                              ),
                             );
                           },
                         ),
