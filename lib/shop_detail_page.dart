@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ShopDetailPage extends StatelessWidget {
   final String shopId;
@@ -29,7 +30,8 @@ class ShopDetailPage extends StatelessWidget {
           Expanded(
             child: Text(
               value.isNotEmpty ? value : "N/A",
-              style: const TextStyle(fontSize: 15, color: Colors.black54),
+              style: const TextStyle(
+                  fontSize: 15, color: Colors.black54),
             ),
           ),
         ],
@@ -37,9 +39,21 @@ class ShopDetailPage extends StatelessWidget {
     );
   }
 
+  /// ⭐ Calculate Average Rating
+  double calculateAverage(List<QueryDocumentSnapshot> docs) {
+    if (docs.isEmpty) return 0;
+    double total = 0;
+    for (var doc in docs) {
+      total += (doc['rating'] ?? 0).toDouble();
+    }
+    return total / docs.length;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final String status = (shopData['status'] ?? 'pending').toLowerCase();
+    final String status =
+        (shopData['status'] ?? 'pending').toLowerCase();
+
     final double screenWidth = MediaQuery.of(context).size.width;
 
     Color statusColor;
@@ -54,33 +68,31 @@ class ShopDetailPage extends StatelessWidget {
         statusColor = Colors.orange;
     }
 
-    TextEditingController rejectionController = TextEditingController();
+    final TextEditingController rejectionController = TextEditingController();
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
-
-      /// CLEAN APPBAR
       appBar: AppBar(
-        backgroundColor: Colors.blue[900],
+        backgroundColor: const Color.fromRGBO(11, 44, 77, 1),
         leading: const BackButton(color: Colors.white),
-        title: const Text("Verification",
-            style: TextStyle(color: Colors.white)),
+        title: const Text(
+          "Verification",
+          style: TextStyle(color: Colors.white),
+        ),
         centerTitle: true,
       ),
-
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Card(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20)),
           elevation: 6,
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-
-                /// HEADER WITH IMAGE SAME POSITION
+                /// HEADER
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -96,7 +108,8 @@ class ShopDetailPage extends StatelessWidget {
                                 fontSize: 22, fontWeight: FontWeight.bold),
                           ),
                           const SizedBox(height: 6),
-                          Text("Owner: ${shopData['owner_name'] ?? 'N/A'}"),
+                          Text(
+                              "Owner: ${shopData['owner_name'] ?? 'N/A'}"),
                           const SizedBox(height: 4),
                           Row(
                             children: [
@@ -129,81 +142,40 @@ class ShopDetailPage extends StatelessWidget {
                             child: Text(
                               status.toUpperCase(),
                               style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold),
+                                  color: Colors.white, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                    /// IMAGE WITH ZOOM
-                    Padding(
-                      padding: const EdgeInsets.only(top: 20),
-                      child: GestureDetector(
-                        onTap: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => Dialog(
-                              backgroundColor: Colors.black,
-                              child: InteractiveViewer(
-                                child: safeImage(
-                                    shopData['shop_image'], screenWidth * 0.3),
-                              ),
-                            ),
-                          );
-                        },
-                        child: safeImage(shopData['shop_image'], screenWidth * 0.3),
-                      ),
-                    ),
+                    /// IMAGE
+                    safeImage(shopData['shop_image'], screenWidth * 0.3),
                   ],
                 ),
 
                 const SizedBox(height: 20),
                 const Divider(),
-
-                /// SHOP DETAILS
-                detailItem(
-                    "Shop Category", shopData['shop_category'] ?? "N/A"),
-
-                /// SWAPPED
+                detailItem("Shop Category", shopData['shop_category'] ?? "N/A"),
                 detailItem(
                   "Opening Hours",
                   "${shopData['open_time'] ?? "N/A"} - ${shopData['close_time'] ?? "N/A"}",
                 ),
                 detailItem("Address", shopData['shop_location'] ?? "N/A"),
-
                 const SizedBox(height: 16),
                 const Divider(),
-
-                /// UPLOADED DOCUMENTS
-                const Text("Uploaded Documents:",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    if (shopData['business_license'] != null)
-                      documentThumb(
-                          "Business License", shopData['business_license']),
-                    const SizedBox(width: 16),
-                    if (shopData['owner_id_card'] != null)
-                      documentThumb("Owner ID", shopData['owner_id_card']),
-                  ],
+                const Text(
+                  "Description:",
+                  style: TextStyle(fontWeight: FontWeight.bold),
                 ),
-
-                const SizedBox(height: 16),
-                const Divider(),
-
-                /// DESCRIPTION
-                const Text("Description:",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
-                Text(shopData['shop_description'] ?? "N/A",
-                    style: const TextStyle(color: Colors.black54)),
-
+                Text(
+                  shopData['shop_description'] ?? "N/A",
+                  style: const TextStyle(color: Colors.black54),
+                ),
                 const SizedBox(height: 24),
 
-                /// APPROVE / REJECT BUTTONS (only for pending)
+                /// ✅ APPROVE / REJECT BUTTONS
                 if (status == 'pending')
                   Row(
                     children: [
@@ -214,18 +186,21 @@ class ShopDetailPage extends StatelessWidget {
                               "rejected",
                               reason: rejectionController.text,
                             );
-                            Navigator.pop(context);
+                            Navigator.pop(context, true);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.red,
                             padding: EdgeInsets.symmetric(
                                 vertical: screenWidth * 0.04),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.zero, // 👉 makes button rectangle
-                            ),    
+                              borderRadius: BorderRadius.circular(14),
+                            ),
                           ),
-                          child: const Text("Reject",
-                              style: TextStyle(color: Colors.white)),
+                          child: const Text(
+                            "Reject",
+                            style: TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -233,26 +208,28 @@ class ShopDetailPage extends StatelessWidget {
                         child: ElevatedButton(
                           onPressed: () {
                             onStatusChange("verified");
-                            Navigator.pop(context);
+                            Navigator.pop(context, true);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             padding: EdgeInsets.symmetric(
                                 vertical: screenWidth * 0.04),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.zero, // 👉 makes button rectangle
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          child: const Text("Approve",
-                              style: TextStyle(color: Colors.white)),
+                          child: const Text(
+                            "Approve",
+                            style: TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
 
-                  /// PENDING ONLY: REJECTION REASON INPUT
                 if (status == 'pending') ...[
+                  const SizedBox(height: 16),
                   TextField(
                     controller: rejectionController,
                     decoration: const InputDecoration(
@@ -260,8 +237,132 @@ class ShopDetailPage extends StatelessWidget {
                       hintText: "Enter reason for rejection (Optional)",
                     ),
                   ),
-                  const SizedBox(height: 16),
                 ],
+
+                const SizedBox(height: 24),
+
+                /// ⭐ REVIEWS SECTION
+                const Text(
+                  "Reviews",
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18),
+                ),
+                const SizedBox(height: 12),
+
+                StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('shops')
+                      .doc(shopId)
+                      .collection('reviews')
+                      .orderBy('timestamp', descending: true)
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData)
+                      return const Center(child: CircularProgressIndicator());
+
+                    final reviews = snapshot.data!.docs;
+                    final avgRating = calculateAverage(reviews);
+
+                    if (reviews.isEmpty)
+                      return const Text(
+                        "No reviews yet.",
+                        style: TextStyle(color: Colors.grey),
+                      );
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Average Rating: ${avgRating.toStringAsFixed(1)} ⭐",
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        Text("${reviews.length} Reviews",
+                            style: const TextStyle(color: Colors.grey)),
+                        const SizedBox(height: 12),
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: reviews.length,
+                          itemBuilder: (context, index) {
+                            final review = reviews[index];
+                            final data = review.data() as Map<String, dynamic>;
+                            final timestamp = data['timestamp'] as Timestamp?;
+
+                            String formattedDate = "";
+                            if (timestamp != null) {
+                              final date = timestamp.toDate();
+                              formattedDate =
+                                  "${date.day}/${date.month}/${date.year}";
+                            }
+
+                            return Card(
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.blue,
+                                  child: Text(
+                                    (data['userName'] ??
+                                            data['userId'] ??
+                                            "A")[0]
+                                        .toUpperCase(),
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 14),
+                                  ),
+                                ),
+                                title: Text(
+                                    data['userName'] ??
+                                        data['userId'] ??
+                                        "Anonymous"),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(data['comment'] ?? ""),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      formattedDate,
+                                      style: const TextStyle(
+                                          fontSize: 12, color: Colors.grey),
+                                    ),
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.report,
+                                          color: Colors.orange),
+                                      onPressed: () {
+                                        FirebaseFirestore.instance
+                                            .collection('shops')
+                                            .doc(shopId)
+                                            .collection('reviews')
+                                            .doc(review.id)
+                                            .update({'reported': true});
+                                      },
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete,
+                                          color: Colors.red),
+                                      onPressed: () {
+                                        FirebaseFirestore.instance
+                                            .collection('shops')
+                                            .doc(shopId)
+                                            .collection('reviews')
+                                            .doc(review.id)
+                                            .delete();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
@@ -270,10 +371,9 @@ class ShopDetailPage extends StatelessWidget {
     );
   }
 
-  /// SAFE IMAGE WIDGET WITH LOCAL FALLBACK
   Widget safeImage(String? url, double size) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: url != null && url.isNotEmpty
           ? Image.network(
               url,
@@ -295,16 +395,6 @@ class ShopDetailPage extends StatelessWidget {
               height: size,
               fit: BoxFit.cover,
             ),
-    );
-  }
-
-  Widget documentThumb(String title, String url) {
-    return Column(
-      children: [
-        safeImage(url, 80),
-        const SizedBox(height: 4),
-        Text(title, style: const TextStyle(fontSize: 12)),
-      ],
     );
   }
 }

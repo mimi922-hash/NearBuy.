@@ -13,10 +13,10 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   final user = FirebaseAuth.instance.currentUser;
-  final Color primaryColor = const Color(0xFFF4511E); // Orange
-  final Color appBarTextColor = const Color(0xFFF4511E); // Orange text
+  final Color primaryColor = const Color(0xFFF4511E);
+  final Color appBarTextColor = const Color(0xFFF4511E);
 
-  int selectedIndex = 0; // 0=pending, 1=verified, 2=rejected
+  int selectedIndex = 0;
 
   void _logout() async {
     await FirebaseAuth.instance.signOut();
@@ -27,6 +27,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
         (route) => false,
       );
     }
+  }
+
+  /// 🔥 FIRESTORE STATUS UPDATE FUNCTION (REAL LOGIC)
+  Future<void> _updateShopStatus(
+    String shopId,
+    String status, {
+    String? reason,
+  }) async {
+    await FirebaseFirestore.instance
+        .collection('shops')
+        .doc(shopId)
+        .update({
+      'status': status,
+      'rejection_reason': status == "rejected" ? reason ?? "" : "",
+    });
   }
 
   Stream<int> _count(String collection, {String? status}) {
@@ -151,7 +166,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
             final data = shop.data() as Map<String, dynamic>;
 
             return Card(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -164,22 +180,31 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   data['shop_name'] ?? "Unnamed Shop",
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                subtitle: Text(data['owner_name'] ?? "Unknown Owner"),
-                onTap: () {
-                  Navigator.push(
+                subtitle:
+                    Text(data['owner_name'] ?? "Unknown Owner"),
+                onTap: () async {
+                  final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => ShopDetailPage(
                         shopId: shop.id,
                         shopData: data,
-                        onStatusChange: (String status, {String? reason}) {
-                          // Placeholder: handle status change if needed
-                          print(
-                              "Shop status changed: $status, reason: $reason");
+                        onStatusChange:
+                            (String status, {String? reason}) async {
+                          await _updateShopStatus(
+                            shop.id,
+                            status,
+                            reason: reason,
+                          );
                         },
                       ),
                     ),
                   );
+
+                  // 🔥 Refresh UI after returning
+                  if (result == true) {
+                    setState(() {});
+                  }
                 },
               ),
             );
@@ -207,7 +232,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: Image.asset(
-              "assets/logo.jpeg",
+              "assets/logo9.jpeg",
               width: 40,
               height: 40,
               fit: BoxFit.contain,
@@ -220,17 +245,21 @@ class _AdminDashboardState extends State<AdminDashboard> {
           children: [
             UserAccountsDrawerHeader(
               decoration: BoxDecoration(color: primaryColor),
-              currentAccountPicture: CircleAvatar(
+              currentAccountPicture: const CircleAvatar(
                 backgroundColor: Colors.white,
-                child: const Icon(Icons.person, color: Colors.grey),
+                child: Icon(Icons.person, color: Colors.grey),
               ),
-              accountName: Text(user?.displayName ?? "Admin"),
-              accountEmail: Text(user?.email ?? ""),
+              accountName:
+                  Text(user?.displayName ?? "Admin"),
+              accountEmail:
+                  Text(user?.email ?? ""),
             ),
             Expanded(child: ListView(children: [])),
             ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text("Logout", style: TextStyle(color: Colors.red)),
+              leading:
+                  const Icon(Icons.logout, color: Colors.red),
+              title: const Text("Logout",
+                  style: TextStyle(color: Colors.red)),
               onTap: _logout,
             ),
           ],
@@ -239,48 +268,56 @@ class _AdminDashboardState extends State<AdminDashboard> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Dashboard Cards
             Padding(
               padding: const EdgeInsets.all(16),
               child: GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
+                physics:
+                    const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
                 children: [
+                  _dashboardCard("Total Users",
+                      Icons.people, Colors.green, _count("users")),
+                  _dashboardCard("Total Shops",
+                      Icons.store, primaryColor, _count("shops")),
                   _dashboardCard(
-                      "Total Users", Icons.people, Colors.green, _count("users")),
-                  _dashboardCard(
-                      "Total Shops", Icons.store, primaryColor, _count("shops")),
-                  _dashboardCard("Verified Shops", Icons.verified, Colors.blue,
+                      "Verified Shops",
+                      Icons.verified,
+                      Colors.blue,
                       _count("shops", status: "verified")),
-                  _dashboardCard("Pending Shops", Icons.hourglass_top, Colors.orange,
+                  _dashboardCard(
+                      "Pending Shops",
+                      Icons.hourglass_top,
+                      Colors.orange,
                       _count("shops", status: "pending")),
                 ],
               ),
             ),
-
             const SizedBox(height: 10),
-
-            // Status tabs container
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius:
+                      BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color:
+                          Colors.black.withOpacity(0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 4),
                     )
                   ],
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  mainAxisAlignment:
+                      MainAxisAlignment.spaceAround,
                   children: [
                     _statusTab("Pending", 0),
                     _statusTab("Verified", 1),
@@ -289,10 +326,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
               ),
             ),
-
             const SizedBox(height: 10),
-
-            // Shop list
             _shopList(),
             const SizedBox(height: 20),
           ],
