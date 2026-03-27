@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 import 'role_selection_screen.dart';
 import 'shop_registration_page.dart';
 import 'add_product_page.dart';
@@ -16,15 +20,77 @@ class ShopkeeperDashboard extends StatefulWidget {
 class _ShopkeeperDashboardState extends State<ShopkeeperDashboard> {
   final user = FirebaseAuth.instance.currentUser;
   bool _loading = true;
+  bool _isUploading = false;
   Map<String, dynamic>? _shopData;
   String? _shopId;
+  String? _profileImageUrl;
 
-  final Color primaryColor = const Color(0xFF1565C0); // logo color
+  final Color primaryColor = const Color(0xFF1565C0);
 
   @override
   void initState() {
     super.initState();
     _checkShop();
+    _loadProfileImage();
+  }
+
+  // Cloudinary Upload Logic
+  Future<void> _pickAndUploadImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+
+    if (pickedFile != null) {
+      setState(() => _isUploading = true);
+      
+      try {
+        // Cloudinary Configuration
+        String cloudName = "dxzaqavfj"; // Replace with your Cloudinary name
+        String uploadPreset = "nearbuy_preset"; // Replace with your Upload Preset
+
+        var request = http.MultipartRequest(
+          'POST',
+          Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload'),
+        );
+
+        request.fields['upload_preset'] = uploadPreset;
+        request.files.add(await http.MultipartFile.fromPath('file', pickedFile.path));
+
+        var response = await request.send();
+        if (response.statusCode == 200) {
+          var responseData = await response.stream.toBytes();
+          var responseString = String.fromCharCodes(responseData);
+          var jsonRes = jsonDecode(responseString);
+          String url = jsonRes['secure_url'];
+
+          // Update in Firestore
+          await FirebaseFirestore.instance
+              .collection('users') // Ya 'shopkeepers' collection jo aap use kar rahe hain
+              .doc(user?.uid)
+              .set({'profile_image': url}, SetOptions(merge: true));
+
+          setState(() {
+            _profileImageUrl = url;
+          });
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Profile updated successfully!")),
+          );
+        }
+      } catch (e) {
+        debugPrint("Upload Error: $e");
+      } finally {
+        setState(() => _isUploading = false);
+      }
+    }
+  }
+
+  void _loadProfileImage() async {
+    final doc = await FirebaseFirestore.instance.collection('users').doc(user?.uid).get();
+    if (doc.exists && doc.data()?['profile_image'] != null) {
+      setState(() {
+        _profileImageUrl = doc.data()!['profile_image'];
+      });
+    }
   }
 
   void _logout() async {
@@ -210,15 +276,67 @@ class _ShopkeeperDashboardState extends State<ShopkeeperDashboard> {
               accountName: Text(user?.displayName ?? "Shopkeeper",
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               accountEmail: Text(user?.email ?? ""),
-              currentAccountPicture: const CircleAvatar(
-                backgroundColor: Colors.white,
-                child: Icon(Icons.store, color: Colors.blue, size: 40),
+              currentAccountPicture: GestureDetector(
+                onTap: _pickAndUploadImage,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: Colors.white,
+                      backgroundImage: _profileImageUrl != null 
+                        ? NetworkImage(_profileImageUrl!) 
+                        : null,
+                      child: _profileImageUrl == null
+                          ? Icon(Icons.person, color: primaryColor, size: 40)
+                          : null,
+                    ),
+                    if (_isUploading)
+                      const Center(child: CircularProgressIndicator(color: Colors.white)),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+                        child: const Icon(Icons.camera_alt, color: Colors.white, size: 15),
+                      ),
+                    )
+                  ],
+                ),
               ),
             ),
             ListTile(
               leading: const Icon(Icons.home),
               title: const Text("Dashboard"),
               onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: const Text("View Profile"),
+              onTap: () {
+                Navigator.pop(context);
+                showDialog(
+                  context: context,
+                  builder: (_) => AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          radius: 50,
+                          backgroundImage: _profileImageUrl != null ? NetworkImage(_profileImageUrl!) : null,
+                          child: _profileImageUrl == null ? const Icon(Icons.person, size: 50) : null,
+                        ),
+                        const SizedBox(height: 15),
+                        Text(user?.displayName ?? "Shopkeeper", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        Text(user?.email ?? "", style: const TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(context), child: const Text("Close"))
+                    ],
+                  ),
+                );
+              },
             ),
             const Divider(),
             _loading
@@ -276,7 +394,7 @@ class _ShopkeeperDashboardState extends State<ShopkeeperDashboard> {
               icon: Stack(
                 children: [
                   const Icon(Icons.notifications),
-                  Positioned(
+                  const Positioned(
                     right: 0,
                     child: CircleAvatar(
                       radius: 6,
@@ -351,13 +469,13 @@ class _ShopkeeperDashboardState extends State<ShopkeeperDashboard> {
                                         builder: (_) => AddProductPage(shopId: _shopId!)),
                                   );
                                 },
-                                child: const Text("Add Product"),
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: primaryColor,
                                   minimumSize: const Size(double.infinity, 50),
                                   shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12)),
                                 ),
+                                child: const Text("Add Product", style: TextStyle(color: Colors.white)),
                               ),
                               const SizedBox(height: 12),
                               _reviewButton(),
@@ -389,13 +507,13 @@ class _ShopkeeperDashboardState extends State<ShopkeeperDashboard> {
                                   MaterialPageRoute(builder: (_) => ShopRegistrationPage()),
                                 ).then((_) => _checkShop());
                               },
-                              child: const Text("Register Shop"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: primaryColor,
                                 minimumSize: const Size(double.infinity, 50),
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12)),
                               ),
+                              child: const Text("Register Shop", style: TextStyle(color: Colors.white)),
                             ),
                           ],
                         ),
