@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'role_selection_screen.dart';
 import 'shop_detail_page.dart';
+import 'admin_billing_screen.dart'; // ✅ NEW IMPORT
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -15,7 +16,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   final user = FirebaseAuth.instance.currentUser;
   final Color primaryColor = const Color(0xFFF4511E);
   final Color appBarTextColor = const Color(0xFFF4511E);
-
   int selectedIndex = 0;
 
   void _logout() async {
@@ -52,6 +52,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
     return ref.snapshots().map((s) => s.docs.length);
   }
 
+  // ✅ NEW: Pending billing count stream
+  Stream<int> _pendingBillingCount() {
+    return FirebaseFirestore.instance
+        .collection('billing')
+        .where('payment_status', isEqualTo: 'pending_verification')
+        .snapshots()
+        .map((s) => s.docs.length);
+  }
+
   Widget _counterText(int value) {
     return TweenAnimationBuilder<int>(
       tween: IntTween(begin: 0, end: value),
@@ -74,7 +83,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       stream: stream,
       builder: (context, snapshot) {
         final value = snapshot.data ?? 0;
-
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
@@ -104,7 +112,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _statusTab(String title, int index) {
     final bool isActive = selectedIndex == index;
-
     return GestureDetector(
       onTap: () {
         setState(() {
@@ -150,9 +157,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         if (!snapshot.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-
         final shops = snapshot.data!.docs;
-
         if (shops.isEmpty) {
           return Center(child: Text("No ${_currentStatus()} shops"));
         }
@@ -165,9 +170,11 @@ class _AdminDashboardState extends State<AdminDashboard> {
             final shop = shops[index];
             final data = shop.data() as Map<String, dynamic>;
 
+            // ✅ NEW: billing_status badge
+            final billingStatus = data['billing_status'] ?? 'active';
+
             return Card(
-              margin:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
               ),
@@ -176,12 +183,34 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   backgroundColor: primaryColor,
                   child: const Icon(Icons.store, color: Colors.white),
                 ),
-                title: Text(
-                  data['shop_name'] ?? "Unnamed Shop",
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                title: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        data['shop_name'] ?? "Unnamed Shop",
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    // ✅ NEW: Show suspended badge on shop card
+                    if (billingStatus == 'suspended')
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          'SUSPENDED',
+                          style: TextStyle(
+                              color: Colors.red,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                  ],
                 ),
-                subtitle:
-                    Text(data['owner_name'] ?? "Unknown Owner"),
+                subtitle: Text(data['owner_name'] ?? "Unknown Owner"),
                 onTap: () async {
                   final result = await Navigator.push(
                     context,
@@ -200,8 +229,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                       ),
                     ),
                   );
-
-                  // 🔥 Refresh UI after returning
                   if (result == true) {
                     setState(() {});
                   }
@@ -209,6 +236,100 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  // ✅ NEW: Billing button widget for dashboard
+  Widget _billingButton() {
+    return StreamBuilder<int>(
+      stream: _pendingBillingCount(),
+      builder: (context, snapshot) {
+        final pendingCount = snapshot.data ?? 0;
+
+        return GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const AdminBillingScreen()),
+            );
+          },
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: pendingCount > 0
+                  ? Colors.orange.shade50
+                  : Colors.green.shade50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: pendingCount > 0
+                    ? Colors.orange.shade300
+                    : Colors.green.shade300,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                )
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: pendingCount > 0
+                        ? Colors.orange.shade100
+                        : Colors.green.shade100,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.account_balance_wallet,
+                    color: pendingCount > 0
+                        ? Colors.orange.shade700
+                        : Colors.green.shade700,
+                    size: 26,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Platform Billing',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        pendingCount > 0
+                            ? '$pendingCount receipt(s) waiting for verification'
+                            : 'All payments verified',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: pendingCount > 0
+                              ? Colors.orange.shade700
+                              : Colors.green.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  color: pendingCount > 0
+                      ? Colors.orange.shade700
+                      : Colors.green.shade700,
+                ),
+              ],
+            ),
+          ),
         );
       },
     );
@@ -249,15 +370,26 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 backgroundColor: Colors.white,
                 child: Icon(Icons.person, color: Colors.grey),
               ),
-              accountName:
-                  Text(user?.displayName ?? "Admin"),
-              accountEmail:
-                  Text(user?.email ?? ""),
+              accountName: Text(user?.displayName ?? "Admin"),
+              accountEmail: Text(user?.email ?? ""),
+            ),
+            // ✅ NEW: Billing shortcut in drawer
+            ListTile(
+              leading: const Icon(
+                  Icons.account_balance_wallet, color: Colors.orange),
+              title: const Text('Platform Billing'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const AdminBillingScreen()),
+                );
+              },
             ),
             Expanded(child: ListView(children: [])),
             ListTile(
-              leading:
-                  const Icon(Icons.logout, color: Colors.red),
+              leading: const Icon(Icons.logout, color: Colors.red),
               title: const Text("Logout",
                   style: TextStyle(color: Colors.red)),
               onTap: _logout,
@@ -268,20 +400,20 @@ class _AdminDashboardState extends State<AdminDashboard> {
       body: SingleChildScrollView(
         child: Column(
           children: [
+            // ── Stats Grid ──
             Padding(
               padding: const EdgeInsets.all(16),
               child: GridView.count(
                 crossAxisCount: 2,
                 shrinkWrap: true,
-                physics:
-                    const NeverScrollableScrollPhysics(),
+                physics: const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 12,
                 mainAxisSpacing: 12,
                 children: [
-                  _dashboardCard("Total Users",
-                      Icons.people, Colors.green, _count("users")),
-                  _dashboardCard("Total Shops",
-                      Icons.store, primaryColor, _count("shops")),
+                  _dashboardCard("Total Users", Icons.people,
+                      Colors.green, _count("users")),
+                  _dashboardCard("Total Shops", Icons.store,
+                      primaryColor, _count("shops")),
                   _dashboardCard(
                       "Verified Shops",
                       Icons.verified,
@@ -295,29 +427,29 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+
+            // ✅ NEW: Billing Button — admin can see pending receipts
+            _billingButton(),
+            const SizedBox(height: 16),
+
+            // ── Shop Verification Tabs ──
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius:
-                      BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                      color:
-                          Colors.black.withOpacity(0.08),
+                      color: Colors.black.withOpacity(0.08),
                       blurRadius: 6,
                       offset: const Offset(0, 4),
                     )
                   ],
                 ),
                 child: Row(
-                  mainAxisAlignment:
-                      MainAxisAlignment.spaceAround,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _statusTab("Pending", 0),
                     _statusTab("Verified", 1),
@@ -335,3 +467,4 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 }
+
