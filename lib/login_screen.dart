@@ -1,317 +1,329 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'signup_screen.dart';
+import 'role_selection_screen.dart';
 import 'customer_dashboard.dart';
 import 'shopkeeper_dashboard.dart';
 import 'admin_dashboard.dart';
 import 'forgot_password_screen.dart';
-
+ 
+// ✅ LoginScreen — no role parameter, Firestore auto-detect
 class LoginScreen extends StatefulWidget {
-  final String role;
-  const LoginScreen({super.key, required this.role});
-
+  const LoginScreen({super.key});
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
-
-class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+ 
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
+  final _emailController    = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscureText = true;
-  bool _isLoading = false;
-
-  final String mainAdminUID = "sYf4uOsCnBhbZ6khzF4y21Ii0W13";
+  bool _isLoading   = false;
+  late AnimationController _animController;
+  late Animation<double>   _fadeAnim;
+  late Animation<Offset>   _slideAnim;
+ 
+  // ── Brand Colors ──
+  static const Color primaryNavy  = Color(0xFF0E2A47);
+  static const Color accentOrange = Color(0xFFFF6A1A);
+  static const Color lightNavy    = Color(0xFF1565C0);
+ 
+  // Admin credentials (unchanged)
+  final String mainAdminUID   = "sYf4uOsCnBhbZ6khzF4y21Ii0W13";
   final String mainAdminEmail = "nearbuyadmin@gmail.com";
-
+ 
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 700),
+    );
+    _fadeAnim  = Tween<double>(begin: 0, end: 1).animate(_animController);
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 0.08), end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
+    _animController.forward();
+  }
+ 
+  @override
+  void dispose() {
+    _animController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+ 
+  // ✅ LOGIN LOGIC unchanged — role from Firestore
   Future<void> _loginUser() async {
+    final email    = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    if (email.isEmpty || password.isEmpty) {
+      _showSnack('Please enter email and password.', Colors.red);
+      return;
+    }
     setState(() => _isLoading = true);
     try {
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
-
-      if (widget.role == "Admin" && email != mainAdminEmail) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Access Denied! Only the main Admin can login."),
-            backgroundColor: Colors.red,
-          ),
-        );
+      final userCredential = await FirebaseAuth.instance
+          .signInWithEmailAndPassword(email: email, password: password);
+      final uid     = userCredential.user!.uid;
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users').doc(uid).get();
+      if (!mounted) return;
+      if (!userDoc.exists) {
+        _showSnack('User record not found!', Colors.red);
         setState(() => _isLoading = false);
         return;
       }
-
-      final userCredential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: email, password: password);
-
-      final uid = userCredential.user!.uid;
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .get();
-
-      if (!mounted) return;
-
-      if (userDoc.exists) {
-        final savedRole = userDoc['role'];
-
-        if (widget.role == "Admin") {
-          if (uid == mainAdminUID && savedRole == "Admin") {
-            _navigateTo(AdminDashboard());
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content:
-                    Text("Access Denied! Only the main Admin can access."),
-                backgroundColor: Colors.red,
-              ),
-            );
-          }
+      final savedRole = userDoc['role'] ?? '';
+      if (savedRole == 'Admin') {
+        if (uid != mainAdminUID || email != mainAdminEmail) {
+          _showSnack('Access Denied! Only main Admin can login.', Colors.red);
+          setState(() => _isLoading = false);
           return;
         }
-
-        if (savedRole == widget.role) {
-          if (widget.role == "Customer") {
-            _navigateTo(CustomerDashboard());
-          } else if (widget.role == "Shopkeeper") {
-            _navigateTo(ShopkeeperDashboard());
-          }
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  "Access Denied! This account is registered as $savedRole."),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("User record not found in Firestore!"),
-            backgroundColor: Colors.red,
-          ),
-        );
       }
+      _showSnack('Welcome back! Login successful \u{1F389}', Colors.green);
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (!mounted) return;
+      if (savedRole == 'Customer')         { _goTo(const CustomerDashboard()); }
+      else if (savedRole == 'Shopkeeper')  { _goTo(const ShopkeeperDashboard()); }
+      else if (savedRole == 'Admin')       { _goTo(const AdminDashboard()); }
+      else { _showSnack('Unknown role. Please contact support.', Colors.red); }
     } on FirebaseAuthException catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message ?? "Login failed!"),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _showSnack(e.message ?? 'Login failed!', Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  void _navigateTo(Widget screen) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("Welcome ${widget.role}! Login successful 🎉"),
-        backgroundColor: Colors.green,
-      ),
-    );
-
-    await Future.delayed(const Duration(seconds: 1));
-
-    if (mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => screen),
-        (route) => false,
-      );
-    }
+ 
+  void _goTo(Widget screen) {
+    Navigator.pushAndRemoveUntil(context,
+        MaterialPageRoute(builder: (_) => screen), (route) => false);
   }
-
+ 
+  void _showSnack(String msg, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg), backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      margin: const EdgeInsets.all(16),
+    ));
+  }
+ 
   @override
   Widget build(BuildContext context) {
-    final Color orange = const Color(0xFFF4511E);
-    final Color blue = const Color(0xFF1565C0);
-
     return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: const Text(
-          "Back",
-          style: TextStyle(color: Colors.black87, fontSize: 16),
-        ),
-      ),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Column(
+        children: [
+          // ── Navy gradient header (matches image) ──
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(top: 60, bottom: 36),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [primaryNavy, Color(0xFF1A3A5C)],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(50),
+                bottomRight: Radius.circular(50),
+              ),
+            ),
             child: Column(
               children: [
-                // 🔹 Header (NearBuy text)
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [BoxShadow(
+                      color: accentOrange.withOpacity(0.3),
+                      blurRadius: 20, offset: const Offset(0, 4),
+                    )],
+                  ),
+                  child: ClipOval(
+                    child: Image.asset(
+                      'assets/logo002.jpeg',
+                      height: 72, width: 72, fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.2,
+                  text: const TextSpan(
+                    style: TextStyle(
+                      fontSize: 34, fontWeight: FontWeight.bold, letterSpacing: 1.5,
                     ),
                     children: [
-                      TextSpan(text: "Near", style: TextStyle(color: blue)),
-                      TextSpan(text: "Buy", style: TextStyle(color: orange)),
+                      TextSpan(text: 'Near',
+                          style: TextStyle(color: Colors.white)),
+                      TextSpan(text: 'Buy',
+                          style: TextStyle(color: accentOrange)),
                     ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  "${widget.role} Login",
-                  style: const TextStyle(
-                    fontSize: 18,
-                    color: Colors.black54,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 30),
-
-                // 🔹 Login Form Card
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.15),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                const SizedBox(height: 6),
+                const Text('Discover shops nearby',
+                    style: TextStyle(color: Colors.white70, fontSize: 13)),
+              ],
+            ),
+          ),
+          // ── Form ──
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+              child: FadeTransition(
+                opacity: _fadeAnim,
+                child: SlideTransition(
+                  position: _slideAnim,
                   child: Column(
                     children: [
-                      TextField(
+                      const SizedBox(height: 8),
+                      // ✅ 'Welcome Back!' heading (matches image)
+                      const Text('Welcome Back!',
+                          style: TextStyle(
+                            fontSize: 22, fontWeight: FontWeight.bold,
+                            color: Color(0xFF0E2A47),
+                          )),
+                      const SizedBox(height: 4),
+                      Text('Login to continue',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                      const SizedBox(height: 24),
+                      // Email field
+                      _buildField(
                         controller: _emailController,
-                        decoration: InputDecoration(
-                          labelText: "Email",
-                          prefixIcon: const Icon(Icons.email_outlined),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
+                        label: 'Phone number or email',
+                        hint: 'Enter email or phone',
+                        icon: Icons.person_outline,
+                        keyboardType: TextInputType.emailAddress,
                       ),
-                      const SizedBox(height: 15),
+                      const SizedBox(height: 14),
+                      // Password field
                       TextField(
                         controller: _passwordController,
                         obscureText: _obscureText,
                         decoration: InputDecoration(
-                          labelText: "Password",
-                          prefixIcon: const Icon(Icons.lock_outline),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                          hintText: 'Password',
+                          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                          prefixIcon: const Icon(Icons.lock_outline,
+                              color: Color(0xFF64748B)),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscureText
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
+                              _obscureText ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                              color: Colors.grey,
                             ),
-                            onPressed: () =>
-                                setState(() => _obscureText = !_obscureText),
+                            onPressed: () => setState(() => _obscureText = !_obscureText),
+                          ),
+                          filled: true, fillColor: Colors.white,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: accentOrange, width: 1.5),
                           ),
                         ),
                       ),
-                      if (widget.role != "Admin")
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const ForgotPasswordScreen(),
-                                ),
-                              );
-                            },
-                            child: Text(
-                              "Forgot Password?",
-                              style: TextStyle(color: blue),
-                            ),
-                          ),
+                      // Forgot password link
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () => Navigator.push(context,
+                              MaterialPageRoute(
+                                  builder: (_) => const ForgotPasswordScreen())),
+                          child: const Text('Forgot Password?',
+                              style: TextStyle(
+                                color: accentOrange, fontWeight: FontWeight.w500,
+                              )),
                         ),
-                      const SizedBox(height: 10),
-
-                      // 🔹 Gradient Button
+                      ),
+                      const SizedBox(height: 4),
+                      // ✅ Orange login button (matches image)
                       SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [blue, orange],
-                              begin: Alignment.centerLeft,
-                              end: Alignment.centerRight,
-                            ),
-                            borderRadius: BorderRadius.circular(10),
+                        width: double.infinity, height: 52,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: accentOrange,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
                           ),
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.transparent,
-                              shadowColor: Colors.transparent,
-                            ),
-                            onPressed: _isLoading ? null : _loginUser,
-                            child: _isLoading
-                                ? const CircularProgressIndicator(
-                                    color: Colors.white)
-                                : const Text(
-                                    "Login",
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                          ),
+                          onPressed: _isLoading ? null : _loginUser,
+                          child: _isLoading
+                              ? const SizedBox(width: 22, height: 22,
+                                  child: CircularProgressIndicator(
+                                      color: Colors.white, strokeWidth: 2.5))
+                              : const Text('Login',
+                                  style: TextStyle(
+                                    fontSize: 17, fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  )),
                         ),
+                      ),
+                      const SizedBox(height: 22),
+                      // Sign up link
+                      Row(mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text("Don't have an account? ",
+                              style: TextStyle(color: Colors.black54, fontSize: 14)),
+                          GestureDetector(
+                            onTap: () => Navigator.pushReplacement(context,
+                                MaterialPageRoute(
+                                    builder: (_) => const RoleSelectionScreen())),
+                            child: const Text('Sign Up',
+                                style: TextStyle(
+                                  color: accentOrange, fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                )),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 25),
-
-                if (widget.role != "Admin")
-                  TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) =>
-                              SignupScreen(role: widget.role),
-                        ),
-                      );
-                    },
-                    child: RichText(
-                      text: TextSpan(
-                        text: "Don’t have an account? ",
-                        style:
-                            const TextStyle(color: Colors.black87, fontSize: 15),
-                        children: [
-                          TextSpan(
-                            text: "Sign Up",
-                            style: TextStyle(
-                              color: orange,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+              ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+ 
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    required IconData icon,
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+        prefixIcon: Icon(icon, color: const Color(0xFF64748B)),
+        filled: true, fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFFF6A1A), width: 1.5),
         ),
       ),
     );
