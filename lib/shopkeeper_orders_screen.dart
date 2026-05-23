@@ -30,8 +30,37 @@ class _ShopkeeperOrdersScreenState extends State<ShopkeeperOrdersScreen>
         .where('status', isEqualTo: statusFilter.toLowerCase()).snapshots();
   }
  
+  // ── UPDATED: Mark as delivered pe platformFee set karo ──
   Future<void> _updateOrderStatus(String orderId, String newStatus) async {
-    await FirebaseFirestore.instance.collection('orders').doc(orderId).update({'status': newStatus, 'updatedAt': FieldValue.serverTimestamp()});
+    final Map<String, dynamic> updateData = {
+      'status': newStatus,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    // Jab delivered karo tab platformFee calculate karke set karo
+    if (newStatus == 'delivered') {
+      final orderSnap = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(orderId)
+          .get();
+
+      if (orderSnap.exists) {
+        final data = orderSnap.data()!;
+        // Sirf tab set karo jab pehle se set nahi hai
+        if (data['platformFee'] == null) {
+          final subtotal = ((data['subtotal'] ?? data['totalAmount'] ?? 0) as num).toDouble();
+          final platformFee = (subtotal * 0.05).roundToDouble(); // 5% platform fee
+          updateData['platformFee'] = platformFee;
+          updateData['subtotal'] = subtotal;
+        }
+      }
+    }
+
+    await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(orderId)
+        .update(updateData);
+
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('Order marked as $newStatus'), backgroundColor: _statusColor(newStatus),
       behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), margin: const EdgeInsets.all(16)));
